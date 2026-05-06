@@ -1,0 +1,38 @@
+# filename: docker/airflow/airflow_settings.yaml
+# purpose:  Airflow Variables for EMI batch prediction DAG (Docker container paths)
+# version:  1.0
+#
+# Imported by airflow-init service on first start:
+#   airflow variables import --format yaml /opt/airflow/airflow_settings.yaml
+#
+# All paths are absolute container paths matching volume mounts in docker-compose.yml.
+# Outside Docker, set these manually in Airflow UI or via `airflow variables set`.
+
+variables:
+  - variable_name: mlflow_tracking_uri
+    variable_value: "sqlite:////opt/airflow/mlflow.db"
+    variable_description: "MLflow tracking URI — absolute path inside Airflow container"
+
+  - variable_name: batch_input_path
+    variable_value: "/opt/airflow/data/processed/unlabeled_for_prediction.csv"
+    variable_description: "High-risk applicants CSV for daily batch scoring (17,488 rows)"
+
+  - variable_name: predictions_dir
+    variable_value: "/opt/airflow/data/processed/predictions"
+    variable_description: "Root dir for versioned predictions: {date}/{run_id}/predictions.csv"
+
+  - variable_name: batch_staging_dir
+    variable_value: "/opt/airflow/data/processed/batch"
+    variable_description: "Staging dir for intermediate CSV files between DAG tasks"
+
+  - variable_name: reference_features_path
+    variable_value: "/opt/airflow/data/processed/train_features.csv"
+    variable_description: "Reference distribution for Evidently drift detection (Layer 1 + 2)"
+
+  - variable_name: drift_reports_dir
+    variable_value: "/opt/airflow/data/processed/drift_reports"
+    variable_description: "Output dir for Evidently HTML drift reports"
+
+  - variable_name: models_dir
+    variable_value: "/opt/airflow/models"
+    variable_description: "Dir containing best_classifier.pkl, best_regressor.pkl, feature_engineer.pkl"

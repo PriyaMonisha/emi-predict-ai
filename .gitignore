@@ -1,0 +1,32 @@
+# DATA - never push to GitHub
+data/
+*.csv
+*.parquet
+*.xlsx
+
+# MODELS - only on deploy branch
+models/
+*.pkl
+*.joblib
+
+# SECRETS
+.env
+.env.*
+.streamlit/secrets.toml
+
+# PYTHON
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# MLFLOW / LOGS
+mlruns/
+*.log
+build.log
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

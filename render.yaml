@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: emi-predict-api
+    env: python
+    branch: deploy
+    buildCommand: pip install -r render-requirements.txt
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: API_KEY
+        generateValue: true
+      - key: MODELS_DIR
+        value: ./models
+      - key: PYTHONPATH
+        value: .
+      - key: REDIS_HOST
+        value: localhost
+      - key: REDIS_PORT
+        value: "6379"
+    healthCheckPath: /health

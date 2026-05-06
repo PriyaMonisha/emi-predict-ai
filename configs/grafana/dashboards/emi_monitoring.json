@@ -1,0 +1,159 @@
+{
+  "title": "EMI Predict AI — Monitoring",
+  "uid": "emi-predict-ai",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"emi-api\"}[1m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Inference Latency p50 / p95 / p99 (s)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(emi_inference_duration_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "p50 {{endpoint}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(emi_inference_duration_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "p95 {{endpoint}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(emi_inference_duration_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "p99 {{endpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Error Rate (4xx + 5xx)",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"emi-api\", status_code=~\"[45]..\"}[5m]))",
+          "legendFormat": "error rate"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Confidence Zone Breakdown",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "emi_predictions_total",
+          "legendFormat": "{{conf_zone}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Cache Hit Rate",
+      "type": "gauge",
+      "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {
+            "steps": [
+              { "color": "red",    "value": 0   },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green",  "value": 0.8 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(emi_cache_hits_total[5m]) / (rate(emi_cache_hits_total[5m]) + rate(emi_cache_misses_total[5m]))",
+          "legendFormat": "hit rate"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Redis Health",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red"   } } },
+            { "type": "value", "options": { "1": { "text": "UP",   "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "emi_redis_up",
+          "legendFormat": "Redis"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Total Predictions (cumulative)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 16, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(emi_predictions_total)",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Auto-Approve Count",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 16, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "emi_predictions_total{conf_zone=\"auto_approve\"}",
+          "legendFormat": "auto_approve"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Human Review Count",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 16, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "emi_predictions_total{conf_zone=\"human_review\"}",
+          "legendFormat": "human_review"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Auto-Reject Count",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 16, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "emi_predictions_total{conf_zone=\"auto_reject\"}",
+          "legendFormat": "auto_reject"
+        }
+      ]
+    }
+  ]
+}

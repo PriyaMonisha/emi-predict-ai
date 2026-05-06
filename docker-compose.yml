@@ -1,0 +1,291 @@
+# filename: docker-compose.yml
+# purpose:  Section 11 — full EMI Predict AI stack (9 services)
+# version:  1.0
+#
+# Services: postgres | redis | mlflow | fastapi |
+#           airflow-init | airflow-webserver | airflow-scheduler |
+#           prometheus | grafana
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Rebuild: docker compose build --no-cache
+#
+# First-run note: airflow-init runs once, sets up DB + admin user + Variables.
+# Trigger the DAG manually in http://localhost:8080 (admin / admin).
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  environment:
+    # Airflow core
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__FERNET_KEY: "mA3dDgxGnQ5Fj2kL9vP7sR1eW8hY4tN6bC0uI3qX="
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgres/airflow"
+    AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    # PYTHONPATH must be /opt/airflow so `src.*` imports resolve (locked decision)
+    PYTHONPATH: /opt/airflow
+    # Airflow Variables injected as env vars (backup to airflow_settings.yaml import)
+    AIRFLOW_VAR_MLFLOW_TRACKING_URI: "sqlite:////opt/airflow/mlflow.db"
+    AIRFLOW_VAR_BATCH_INPUT_PATH: "/opt/airflow/data/processed/unlabeled_for_prediction.csv"
+    AIRFLOW_VAR_PREDICTIONS_DIR: "/opt/airflow/data/processed/predictions"
+    AIRFLOW_VAR_BATCH_STAGING_DIR: "/opt/airflow/data/processed/batch"
+    AIRFLOW_VAR_REFERENCE_FEATURES_PATH: "/opt/airflow/data/processed/train_features.csv"
+    AIRFLOW_VAR_DRIFT_REPORTS_DIR: "/opt/airflow/data/processed/drift_reports"
+    # Model files — direct joblib loading (MLflow artifact URIs contain Windows paths)
+    AIRFLOW_VAR_MODELS_DIR: "/opt/airflow/models"
+    # Redis
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./src:/opt/airflow/src
+    - ./mlflow.db:/opt/airflow/mlflow.db
+    - ./mlruns:/opt/airflow/mlruns
+    - ./models:/opt/airflow/models
+    - ./data:/opt/airflow/data
+    - ./docker/airflow/airflow_settings.yaml:/opt/airflow/airflow_settings.yaml:ro
+  networks:
+    - emi-network
+
+
+services:
+
+  # ── 1. PostgreSQL — Airflow metadata DB ─────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: emi-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - emi-network
+
+  # ── 2. Redis — feature store ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: emi-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - emi-network
+
+  # ── 3. MLflow — experiment tracking server ────────────────────────────────────
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: emi-mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////app/mlflow.db
+      --default-artifact-root /app/mlruns
+      --host 0.0.0.0
+      --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlflow.db:/app/mlflow.db
+      - ./mlruns:/app/mlruns
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - emi-network
+
+  # ── 4. FastAPI — prediction API ───────────────────────────────────────────────
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: emi-fastapi
+    env_file: .env
+    environment:
+      # Override host .env values with Docker-internal service paths
+      MLFLOW_TRACKING_URI: "sqlite:////app/mlflow.db"
+      MODELS_DIR: "/app/models"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # pip --user installs land in /home/appuser/.local which Python skips
+      # in Docker containers — explicitly add it to PYTHONPATH
+      PYTHONPATH: "/app:/home/appuser/.local/lib/python3.11/site-packages"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./mlflow.db:/app/mlflow.db
+      - ./mlruns:/app/mlruns
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      start_period: 120s
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - emi-network
+
+  # ── 5. Airflow init — one-shot DB setup + Variables ───────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    container_name: emi-airflow-init
+    # exec-form bypasses /bin/sh -c wrapper — entrypoint sees 'version' → exec 'airflow version'
+    # then runs the actual init via a follow-up healthcheck restart approach
+    entrypoint: ["/bin/bash", "-c"]
+    # Variables are pre-loaded via AIRFLOW_VAR_* env vars — no import needed
+    command: ["airflow db migrate && (airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@emi-predict.ai || true) && echo AIRFLOW_INIT_COMPLETE"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── 6. Airflow webserver ───────────────────────────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: emi-airflow-webserver
+    entrypoint: ["/usr/bin/dumb-init", "--", "/entrypoint"]
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ── 7. Airflow scheduler ───────────────────────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: emi-airflow-scheduler
+    entrypoint: ["/usr/bin/dumb-init", "--", "/entrypoint"]
+    command: airflow scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep 'airflow scheduler' | grep -v grep || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ── 8. Prometheus — metrics scraping ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: emi-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./configs/prometheus.docker.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - emi-network
+
+  # ── 9. Grafana — dashboards ───────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: emi-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./configs/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - emi-network
+
+  # ── 10. Streamlit — prediction UI ─────────────────────────────────────────────
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/streamlit/Dockerfile
+    container_name: emi-streamlit
+    environment:
+      API_URL: "http://fastapi:8000"
+      API_KEY: "${API_KEY}"
+      PYTHONPATH: "/app"
+    ports:
+      - "8501:8501"
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - emi-network
+
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+
+networks:
+  emi-network:
+    driver: bridge

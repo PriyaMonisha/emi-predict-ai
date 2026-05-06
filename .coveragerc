@@ -1,0 +1,13 @@
+[run]
+omit =
+    src/models/train_classifier.py
+    src/models/train_regressor.py
+    src/models/baseline_logistic.py
+    src/monitoring/drift_monitor.py
+    */__init__.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError

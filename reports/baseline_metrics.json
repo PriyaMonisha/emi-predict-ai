@@ -1,0 +1,54 @@
+{
+  "section": 3,
+  "description": "Baseline models \u2014 rule-based and logistic regression",
+  "models": [
+    {
+      "model": "Rule-Based",
+      "roc_auc": 0.7956,
+      "f1": 0.5224,
+      "precision": 0.3761,
+      "recall": 0.8551
+    },
+    {
+      "model": "Logistic Regression",
+      "roc_auc": 0.9763,
+      "f1": 0.8158,
+      "precision": 0.7205,
+      "recall": 0.9402
+    }
+  ],
+  "confidence_zones": {
+    "rule_based": {
+      "auto_approve": 14324,
+      "human_review": 19524,
+      "auto_reject": 43610,
+      "total": 77458,
+      "auto_approve_pct": 18.5,
+      "human_review_pct": 25.2,
+      "auto_reject_pct": 56.3
+    },
+    "logistic_regression": {
+      "auto_approve": 12916,
+      "human_review": 8304,
+      "auto_reject": 56238,
+      "total": 77458,
+      "auto_approve_pct": 16.7,
+      "human_review_pct": 10.7,
+      "auto_reject_pct": 72.6
+    }
+  },
+  "data_split": {
+    "train_size": 309829,
+    "test_size": 77458,
+    "strategy": "stratified 80/20",
+    "random_state": 42
+  },
+  "decisions": {
+    "class_weight": "balanced",
+    "eval_threshold": 0.5,
+    "encoding": "one-hot drop_first",
+    "rule_credit_floor": 650,
+    "rule_expense_ceil": 0.6,
+    "rule_salary_floor": 20000
+  }
+}
