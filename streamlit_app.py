@@ -1,6 +1,6 @@
 # filename: streamlit_app.py
 # purpose:  Multi-page Streamlit UI entry point for EMI Predict AI
-# version:  1.1
+# version:  1.2
 
 import streamlit as st
 from src.ui.api_client import _get_defaults, check_health
@@ -9,7 +9,7 @@ st.set_page_config(
     layout="wide",
     page_title="EMI Predict AI",
     page_icon="🏦",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="auto",   # "collapsed" hides pages/ nav — "auto" keeps it visible
 )
 
 # Initialise session state with API defaults on first load
@@ -51,10 +51,30 @@ with st.sidebar:
     st.divider()
     st.caption("EMI Predict AI · Section 14")
 
-# ── Navigation ─────────────────────────────────────────────────────────────────
-pg = st.navigation([
-    st.Page("pages/1_Single_Prediction.py", title="Single Prediction", icon="🎯"),
-    st.Page("pages/2_Batch_Upload.py",      title="Batch Upload",       icon="📂"),
-    st.Page("pages/3_System_Health.py",     title="System Health",      icon="🔍"),
-])
-pg.run()
+# ── Home page ──────────────────────────────────────────────────────────────────
+# pages/ folder routing is automatic in all Streamlit versions — no st.navigation() needed.
+# Streamlit discovers pages/*.py at startup and injects them into the sidebar nav.
+
+st.title("🏦 EMI Predict AI")
+st.markdown(
+    "**Production-grade EMI risk prediction for Indian financial institutions.** "
+    "Dual-model pipeline: LightGBM eligibility classifier + XGBoost EMI regressor."
+)
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Classifier AUC", "0.9999", "LightGBM")
+col2.metric("Regressor RMSE", "₹671.85", "XGBoost")
+col3.metric("Training Rows", "387,287", "stratified split")
+
+st.divider()
+st.markdown(
+    "**Use the sidebar to navigate:**\n"
+    "- 🎯 **Single Prediction** — score one applicant instantly\n"
+    "- 📂 **Batch Upload** — upload a CSV and download scored results\n"
+    "- 🔍 **System Health** — check API, Redis, and model status"
+)
+st.info(
+    "Configure the API URL and Key in the sidebar, then click **Test Connection** "
+    "to verify the backend is reachable before scoring.",
+    icon="ℹ️",
+)
