@@ -1,6 +1,6 @@
 # filename: src/ui/api_client.py
 # purpose:  HTTP client wrapper for EMI Predict AI FastAPI service
-# version:  1.0
+# version:  1.1
 
 import os
 import requests
@@ -50,9 +50,19 @@ def predict_single(payload: dict, api_url: str, api_key: str) -> dict:
             "Verify the URL in the sidebar is correct."
         )
     if r.status_code != 200:
-        detail = r.json().get("detail", r.text[:200]) if r.content else r.status_code
+        try:
+            detail = r.json().get("detail", r.text[:200])
+        except Exception:
+            detail = r.text[:200] or "No response body"
         raise RuntimeError(f"API error {r.status_code}: {detail}")
-    return r.json()
+
+    try:
+        return r.json()
+    except Exception:
+        raise RuntimeError(
+            f"API returned invalid response (status {r.status_code}). "
+            f"Render may be cold-starting. Please retry in 30 seconds."
+        )
 
 
 def predict_batch(df: pd.DataFrame, api_url: str, api_key: str) -> dict:
@@ -78,9 +88,19 @@ def predict_batch(df: pd.DataFrame, api_url: str, api_key: str) -> dict:
             "Verify the URL in the sidebar is correct."
         )
     if r.status_code != 200:
-        detail = r.json().get("detail", r.text[:200]) if r.content else r.status_code
+        try:
+            detail = r.json().get("detail", r.text[:200])
+        except Exception:
+            detail = r.text[:200] or "No response body"
         raise RuntimeError(f"API error {r.status_code}: {detail}")
-    return r.json()
+
+    try:
+        return r.json()
+    except Exception:
+        raise RuntimeError(
+            f"API returned invalid response (status {r.status_code}). "
+            f"Render may be cold-starting. Please retry in 30 seconds."
+        )
 
 
 def build_results_dataframe(response: dict) -> pd.DataFrame:
