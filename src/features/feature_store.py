@@ -1,6 +1,6 @@
 # filename: src/features/feature_store.py
 # purpose:  Section 8 — Redis-backed feature cache (cache-aside pattern)
-# version:  1.0
+# version:  1.1
 
 import os
 import json
@@ -42,6 +42,8 @@ def get_connection() -> redis.Redis:
         port=int(os.environ.get("REDIS_PORT", 6379)),
         db=int(os.environ.get("REDIS_DB", 0)),
         decode_responses=True,   # always str, never bytes — required for json.loads
+        socket_connect_timeout=2,
+        socket_timeout=2,
     )
 
 
